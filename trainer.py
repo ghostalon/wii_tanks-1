@@ -11,7 +11,7 @@ from Advanced_Random_Agent import Advanced_Random_Agent
 import wandb
 
 def main():
-    num = 2
+    num = 4
     env = Enviroment()
     env.init_screen()
     buffer = ReplayBuffer(path=None)
@@ -20,7 +20,7 @@ def main():
     player1_hat = DQN_Agent(device=torch.device('cpu'))
     # player2 = Human_Agent()
     player2 = Random_Agent()
-    player2 = Advanced_Random_Agent(0.5)
+    player2 = Advanced_Random_Agent(OPPONENT_EPSILON)
 
     pygame.init()
 
@@ -36,9 +36,9 @@ def main():
     eplosion_timer = 0
     game_ended = False
     result = 0
-    learning_rate = 0.0001
+    learning_rate = LEARNING_RATE
     start_epoch = 0
-    C, tau = 3, 0.001
+    C  = TARGET_UPDATE_FREQ
     loss = torch.tensor(0)
     avg = 0
     scores, losses, avg_score = [], [], []
@@ -51,6 +51,7 @@ def main():
     win_rate_window = []   # 1=win, 0=lose for last 100 episodes
     steps_to_win_list = []
     steps_to_lose_list = []
+    grad_steps = 0  # total gradient updates across all episodes
 
     project = "TankAI"
     wandb.init(
@@ -64,11 +65,20 @@ def main():
         "Schedule": f'{str(scheduler.milestones)} gamma={str(scheduler.gamma)}',
         "epochs": epochs,
         "start_epoch": start_epoch,
+        "epsilon_start": epsilon_start,
+        "epsilon_final": epsilon_final,
         "decay": epsiln_decay,
         "gamma": gamma,
         "batch_size": batch_size, 
+        "MIN_BUFFER": MIN_BUFFER,
         "C": C,
+        "WIN_RATE_WINDOW": WIN_RATE_WINDOW,
+        "CHECKPOINT_INTERVAL": CHECKPOINT_INTERVAL,
+        "OPPONENT_EPSILON": OPPONENT_EPSILON,
         "Model":str(player1.DQN),
+        "TANK_SPEED": TANK_SPEED,
+        "BULLET_SPEED": BULLET_SPEED,
+        "MAX_AMMUNITION": MAX_AMMUNITION,
         "REWARD_WIN": REWARD_WIN,
         "REWARD_LOSE": REWARD_LOSE,
         "STEP_PENALTY": STEP_PENALTY,
@@ -124,19 +134,19 @@ def main():
                 else:
                     steps_to_lose_list.append(step)
                     win_rate_window.append(0)
-                if len(win_rate_window) > 100:
+                if len(win_rate_window) > WIN_RATE_WINDOW:
                     win_rate_window.pop(0)
                 win_rate = sum(win_rate_window) / len(win_rate_window)
-                print(f"Epoch {epoch} step {step} Reward {episode_reward:.3f}  AvgLoss {avg_loss:.4f}  Wins {win_count}  WinRate {win_rate:.2f}")
+                print(f"num {num} Epoch {epoch} step {step} Reward {episode_reward:.3f}  AvgLoss {avg_loss:.4f}  Wins {win_count}  WinRate {win_rate:.2f}")
                 wandb.log({
                     "episode_reward": episode_reward,
                     "avg_loss": avg_loss,
-                    "win_rate_100": win_rate,
+                    "win_rate_20": win_rate,
                     "steps_this_episode": step,
                     "steps_to_win": steps_to_win_list[-1] if done == 1 else None,
                     "steps_to_lose": steps_to_lose_list[-1] if done == 2 else None,
                 })
-                if epoch % 100 == 0:
+                if epoch % CHECKPOINT_INTERVAL == 0:
                     os.makedirs('checkpoints', exist_ok=True)
                     player1.save_param(f'checkpoints/dqn_epoch_{epoch}.pth')
                 # Restart the game immediately
@@ -150,13 +160,15 @@ def main():
             states, actions, rewards, next_states, dones = buffer.sample(batch_size)
             actions_index = player1.actions_to_indices(actions)
             Q_values = player1.Q(states, actions_index)
-            next_action, Q_hat_values = player1_hat.get_Actions_Values(next_states)
-
+            # DDQN: online network selects best action, target network evaluates it
+            next_actions, _ = player1.get_Actions_Values(next_states)       # online picks action
+            Q_hat_values = player1_hat.Q(next_states, next_actions)         # target evaluates it
             loss = player1.DQN.loss(Q_values, rewards, Q_hat_values, dones)
+            optim.zero_grad()
             loss.backward()
             optim.step()
-            optim.zero_grad()
             scheduler.step()
+            grad_steps += 1
             try:
                 lv = float(loss.item())
             except Exception:
@@ -164,10 +176,8 @@ def main():
             episode_loss += lv
             loss_steps += 1
 
-            if epoch % C == 0:
-                # player1_hat.DQN.load_state_dict(player1.DQN.state_dict())
+            if grad_steps % C == 0:
                 player1_hat.fix_update(dqn=player1.DQN)
-                # player1_hat.soft_update(dqn=player1.DQN, tau=tau)
             
             pygame.display.update()
             clock.tick(FPS)
