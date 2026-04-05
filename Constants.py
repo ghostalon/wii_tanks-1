@@ -3,17 +3,17 @@ FPS = 60
 
 WIDTH, HEIGHT = 1500,900
 
-
 screen = pygame.display.set_mode((WIDTH,HEIGHT))
 
 #RGB
-RED = (255, 0, 0)
+
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 BLUE = (0, 0, 255)
 LIGHTGRAY = (211,211,211)
 GREEN = (0, 128, 0)
 CADETBLUE1 = (152,245,255)
+RED = (255, 0, 0)
 
 TANK_SPEED = 7
 MAX_AMMUNITION = 5
