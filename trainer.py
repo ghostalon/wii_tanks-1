@@ -11,7 +11,7 @@ from Advanced_Random_Agent import Advanced_Random_Agent
 import wandb
 
 def main():
-    num = 11
+    num = 14
     env = Enviroment()
     env.init_screen()
     buffer = ReplayBuffer(path=None)
@@ -49,6 +49,7 @@ def main():
 
     win_count = 0
     win_rate_window = []   # 1=win, 0=lose for last 100 episodes
+    best_win_rate = 0.0
     steps_to_win_list = []
     steps_to_lose_list = []
     grad_steps = 0  # total gradient updates across all episodes
@@ -147,8 +148,10 @@ def main():
                     "steps_to_lose": steps_to_lose_list[-1] if done == 2 else None,
                 })
                 if epoch % CHECKPOINT_INTERVAL == 0:
-                    os.makedirs('checkpoints', exist_ok=True)
-                    player1.save_param(f'checkpoints/dqn_epoch_{epoch}.pth')
+                    if win_rate > best_win_rate:
+                        best_win_rate = win_rate
+                        os.makedirs('checkpoints', exist_ok=True)
+                        player1.save_param(f'checkpoints/dqn_epoch_{epoch}.pth')
                 # Restart the game immediately
                 break
 
